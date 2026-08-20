@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="My Tasks — a clean, minimal to-do app built with Flask." />
+  <title>My Tasks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <main class="container">
+    <header class="hero">
+      <div class="hero-icon">✅</div>
+      <h1>My Tasks</h1>
+      <p class="subtitle">Stay organised, stay productive.</p>
+    </header>
+
+    <!-- Add Task Form -->
+    <section class="card input-card" aria-label="Add a new task">
+      <div class="input-row">
+        <input id="task-input" type="text" placeholder="What do you need to do?" autocomplete="off"
+          aria-label="New task" maxlength="200" />
+        <button id="add-btn" class="btn btn-primary" aria-label="Add task">
+          <span class="btn-icon">+</span> Add Task
+        </button>
+      </div>
+      <p id="error-msg" class="error-msg" role="alert" aria-live="polite"></p>
+    </section>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+      <span id="task-count" class="stat">0 tasks</span>
+    </div>
+
+    <!-- Task List -->
+    <section class="card task-card" aria-label="Task list">
+      <ul id="task-list" role="list">
+        <!-- Tasks injected here -->
+      </ul>
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">🗒️</div>
+        <p>No tasks yet — add one above!</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/script.js"></script>
+</body>
+
+</html>
