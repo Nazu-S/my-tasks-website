@@ -424,3 +424,162 @@ body {
 .task-item.completed .task-bullet {
   opacity: 0.35;
 }
+
+/* ============================================================
+   USER BAR (top-right strip shown on main app page)
+   ============================================================ */
+.user-bar {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-pill {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-logout {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(255, 77, 109, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(255, 77, 109, 0.25);
+  border-radius: 999px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition),
+              transform var(--transition);
+  white-space: nowrap;
+}
+
+.btn-logout:hover {
+  background: rgba(255, 77, 109, 0.25);
+  border-color: rgba(255, 77, 109, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-logout:active {
+  transform: scale(0.96);
+}
+
+/* ============================================================
+   AUTH PAGES (login / signup)
+   ============================================================ */
+.auth-container {
+  max-width: 440px;
+}
+
+.auth-card {
+  padding: 32px 28px;
+}
+
+/* Form groups */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.form-label {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.form-hint {
+  font-weight: 400;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.form-input {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 13px 16px;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.form-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* Auth submit button */
+.auth-submit-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 14px 22px;
+  margin-top: 6px;
+  font-size: 0.97rem;
+}
+
+/* Switch link (e.g. "Already have an account? Log in") */
+.auth-switch {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.auth-link {
+  color: var(--accent-light);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--transition);
+}
+
+.auth-link:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+/* Flash messages */
+.flash-msg {
+  border-radius: var(--radius-sm);
+  padding: 11px 16px;
+  font-size: 0.87rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+  animation: slide-in 0.25s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.flash-error {
+  background: rgba(255, 77, 109, 0.15);
+  border: 1px solid rgba(255, 77, 109, 0.35);
+  color: #ff7a94;
+}
+
+.flash-success {
+  background: rgba(108, 99, 255, 0.15);
+  border: 1px solid rgba(108, 99, 255, 0.35);
+  color: var(--accent-light);
+}

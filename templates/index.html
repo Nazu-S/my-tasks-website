@@ -15,6 +15,16 @@
   <div class="bg-orb orb-1"></div>
   <div class="bg-orb orb-2"></div>
 
+  <!-- User bar: shown only when logged in -->
+  <div class="user-bar">
+    <span class="user-pill">👤 {{ user_name }}</span>
+    <form method="POST" action="/logout" style="display:inline;">
+      <button type="submit" class="btn btn-logout" id="logout-btn" aria-label="Log out">
+        Log out
+      </button>
+    </form>
+  </div>
+
   <main class="container">
     <header class="hero">
       <div class="hero-icon">✅</div>
