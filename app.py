@@ -7,6 +7,11 @@ from flask import (
     session, redirect, url_for, flash
 )
 from werkzeug.security import generate_password_hash, check_password_hash
+from dotenv import load_dotenv
+from ai_provider import generate_task_suggestions, AIProviderError
+
+# Load environment variables from .env file on startup
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -54,7 +59,22 @@ def init_db():
                 title      TEXT    NOT NULL,
                 completed  INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT    NOT NULL,
-                user_id    INTEGER REFERENCES users(id)
+                user_id    INTEGER REFERENCES users(id),
+                priority   TEXT,
+                due_date   TEXT
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS study_plans (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id          INTEGER NOT NULL REFERENCES users(id),
+                goal             TEXT NOT NULL,
+                subjects         TEXT NOT NULL,
+                daily_study_time TEXT NOT NULL,
+                exam_date        TEXT,
+                difficulty       TEXT NOT NULL,
+                created_at       TEXT NOT NULL
             )
         """)
 
@@ -66,6 +86,10 @@ def init_db():
         ]
         if "user_id" not in existing_cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN user_id INTEGER REFERENCES users(id)")
+        if "priority" not in existing_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN priority TEXT")
+        if "due_date" not in existing_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
 
         conn.commit()
 
@@ -78,7 +102,65 @@ def row_to_dict(row):
         "title":      row["title"],
         "completed":  bool(row["completed"]),
         "created_at": row["created_at"],
+        "priority":   row["priority"] if "priority" in row.keys() else None,
+        "due_date":   row["due_date"] if "due_date" in row.keys() else None,
     }
+
+
+def validate_task_details(data):
+    """Validate optional task metadata shared by create and edit requests."""
+    priority = data.get("priority")
+    due_date = data.get("due_date")
+    if priority is not None and priority not in {"low", "medium", "high"}:
+        return None
+    if due_date == "":
+        due_date = None
+    if due_date is not None:
+        try:
+            datetime.strptime(due_date, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return None
+    return priority, due_date
+
+
+def user_to_dict(row):
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+        "created_at": row["created_at"],
+    }
+
+
+def plan_to_dict(row):
+    return {
+        "id": row["id"],
+        "goal": row["goal"],
+        "subjects": row["subjects"],
+        "daily_study_time": row["daily_study_time"],
+        "exam_date": row["exam_date"],
+        "difficulty": row["difficulty"],
+        "created_at": row["created_at"],
+    }
+
+
+def validate_study_plan(data):
+    goal = data.get("goal", "").strip()
+    subjects = data.get("subjects", "") or ""
+    subjects = subjects.strip()
+    daily_study_time = data.get("daily_study_time", "").strip()
+    exam_date = data.get("exam_date") or None
+    difficulty = data.get("difficulty", "").strip().lower()
+    if not goal or not daily_study_time:
+        return None
+    if difficulty not in {"easy", "medium", "hard"}:
+        return None
+    if exam_date:
+        try:
+            datetime.strptime(exam_date, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return None
+    return goal, subjects, daily_study_time, exam_date, difficulty
 
 
 # ── Auth helpers ─────────────────────────────────────────────────────────────
@@ -207,6 +289,84 @@ def index():
     return render_template("index.html", user_name=session.get("user_name", ""))
 
 
+@app.route("/api/profile", methods=["GET"])
+@login_required
+def get_profile():
+    user_id = get_current_user_id()
+    with get_db() as conn:
+        user = conn.execute(
+            "SELECT id, name, email, created_at FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    if user is None:
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify(user_to_dict(user))
+
+
+@app.route("/api/study-plan", methods=["GET"])
+@login_required
+def get_study_plan():
+    user_id = get_current_user_id()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM tasks WHERE user_id = ? AND completed = 0 "
+            "ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date, created_at",
+            (user_id,),
+        ).fetchall()
+    tasks = [row_to_dict(row) for row in rows]
+    return jsonify({
+        "tasks": tasks,
+        "total": len(tasks),
+        "scheduled": sum(task["due_date"] is not None for task in tasks),
+    })
+
+
+@app.route("/api/study-plans", methods=["GET"])
+@login_required
+def get_study_plans():
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM study_plans WHERE user_id = ? ORDER BY created_at DESC",
+            (get_current_user_id(),),
+        ).fetchall()
+    return jsonify([plan_to_dict(row) for row in rows])
+
+
+@app.route("/api/study-plans", methods=["POST"])
+@login_required
+def create_study_plan():
+    data = request.get_json(silent=True) or {}
+    plan = validate_study_plan(data)
+    if plan is None:
+        return jsonify({"error": "Please complete all study plan fields."}), 400
+    created_at = datetime.now().isoformat(timespec="seconds")
+    with get_db() as conn:
+        cursor = conn.execute(
+            """INSERT INTO study_plans
+               (user_id, goal, subjects, daily_study_time, exam_date, difficulty, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (get_current_user_id(), *plan, created_at),
+        )
+        row = conn.execute(
+            "SELECT * FROM study_plans WHERE id = ? AND user_id = ?",
+            (cursor.lastrowid, get_current_user_id()),
+        ).fetchone()
+    return jsonify(plan_to_dict(row)), 201
+
+
+@app.route("/api/study-plans/<int:plan_id>", methods=["DELETE"])
+@login_required
+def delete_study_plan(plan_id):
+    with get_db() as conn:
+        result = conn.execute(
+            "DELETE FROM study_plans WHERE id = ? AND user_id = ?",
+            (plan_id, get_current_user_id()),
+        )
+    if result.rowcount == 0:
+        return jsonify({"error": "Study plan not found"}), 404
+    return jsonify({"message": "Study plan deleted"}), 200
+
+
 # ── Task API Routes (all require login + ownership) ──────────────────────────
 
 @app.route("/api/tasks", methods=["GET"])
@@ -235,13 +395,18 @@ def add_task():
     title = data.get("title", "").strip()
     if not title:
         return jsonify({"error": "Task title cannot be empty"}), 400
+    details = validate_task_details(data)
+    if details is None:
+        return jsonify({"error": "Invalid priority or due date"}), 400
+    priority, due_date = details
 
     created_at = datetime.now().isoformat(timespec="seconds")
     try:
         conn   = get_db()
         cursor = conn.execute(
-            "INSERT INTO tasks (title, completed, created_at, user_id) VALUES (?, 0, ?, ?)",
-            (title, created_at, user_id),
+            "INSERT INTO tasks (title, completed, created_at, user_id, priority, due_date) "
+            "VALUES (?, 0, ?, ?, ?, ?)",
+            (title, created_at, user_id, priority, due_date),
         )
         conn.commit()
         task_id = cursor.lastrowid
@@ -252,6 +417,122 @@ def add_task():
         return jsonify(row_to_dict(row)), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["PATCH"])
+@login_required
+def edit_task(task_id):
+    data = request.get_json(silent=True) or {}
+    title = data.get("title", "").strip()
+    if not title:
+        return jsonify({"error": "Task title cannot be empty"}), 400
+    details = validate_task_details(data)
+    if details is None:
+        return jsonify({"error": "Invalid priority or due date"}), 400
+    priority, due_date = details
+    try:
+        with get_db() as conn:
+            result = conn.execute(
+                "UPDATE tasks SET title = ?, priority = ?, due_date = ? "
+                "WHERE id = ? AND user_id = ?",
+                (title, priority, due_date, task_id, get_current_user_id()),
+            )
+            if result.rowcount == 0:
+                return jsonify({"error": "Task not found"}), 404
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
+                (task_id, get_current_user_id()),
+            ).fetchone()
+        return jsonify(row_to_dict(row)), 200
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+
+
+def validate_suggestions(suggestions):
+    """Validate the small, user-confirmed payload sent by the dashboard."""
+    if not isinstance(suggestions, list) or not suggestions or len(suggestions) > 20:
+        return None
+
+    validated = []
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict):
+            return None
+        title = suggestion.get("title", "")
+        priority = suggestion.get("priority", "medium")
+        due_date = suggestion.get("due_date")
+        if not isinstance(title, str) or not title.strip() or len(title.strip()) > 200:
+            return None
+        if priority not in {"low", "medium", "high"}:
+            return None
+        if due_date is not None:
+            try:
+                datetime.strptime(due_date, "%Y-%m-%d")
+            except (TypeError, ValueError):
+                return None
+        validated.append({"title": title.strip(), "priority": priority, "due_date": due_date})
+    return validated
+
+
+@app.route("/api/ai/tasks/suggest", methods=["POST"])
+@login_required
+def suggest_ai_tasks():
+    """Generate suggestions without writing anything to the database."""
+    data = request.get_json(silent=True) or {}
+
+    goal = data.get("goal", "")
+    count = data.get("count", 3)
+
+    if not isinstance(goal, str) or not goal.strip():
+        return jsonify({"error": "Please enter a goal first."}), 400
+
+    if len(goal.strip()) > 2000:
+        return jsonify({"error": "Please keep your goal under 2,000 characters."}), 400
+
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = 3
+
+    count = max(1, min(count, 10))
+
+    try:
+        suggestions = generate_task_suggestions(goal.strip(), count)
+    except AIProviderError as error:
+        return jsonify({"error": str(error)}), error.status_code
+
+    return jsonify({"suggestions": suggestions}), 200
+
+@app.route("/api/ai/tasks/confirm", methods=["POST"])
+@login_required
+def confirm_ai_tasks():
+    """Save only suggestions explicitly selected by the logged-in user."""
+    data = request.get_json(silent=True) or {}
+    suggestions = validate_suggestions(data.get("suggestions"))
+    if suggestions is None:
+        return jsonify({"error": "Please select valid task suggestions."}), 400
+
+    user_id = get_current_user_id()
+    created_at = datetime.now().isoformat(timespec="seconds")
+    try:
+        with get_db() as conn:
+            created = []
+            for suggestion in suggestions:
+                cursor = conn.execute(
+                    """INSERT INTO tasks
+                       (title, completed, created_at, user_id, priority, due_date)
+                       VALUES (?, 0, ?, ?, ?, ?)""",
+                    (suggestion["title"], created_at, user_id,
+                     suggestion["priority"], suggestion["due_date"]),
+                )
+                row = conn.execute(
+                    "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
+                    (cursor.lastrowid, user_id),
+                ).fetchone()
+                created.append(row_to_dict(row))
+            conn.commit()
+        return jsonify({"tasks": created}), 201
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
 
 
 @app.route("/api/tasks/<int:task_id>/complete", methods=["PATCH"])

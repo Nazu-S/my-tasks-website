@@ -1,67 +1,233 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="My Tasks — a clean, minimal to-do app built with Flask." />
-  <title>My Tasks</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="My Tasks productivity dashboard">
+  <title>My Tasks | Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
 </head>
-
 <body>
-  <div class="bg-orb orb-1"></div>
-  <div class="bg-orb orb-2"></div>
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+  
+  <div class="app-shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="#dashboard">
+        <span class="brand-mark">✓</span>
+        <span>MY TASKS</span>
+      </a>
+      <nav class="side-nav">
+        <a class="nav-link active" href="#dashboard"><span>⌂</span>Dashboard</a>
+        <a class="nav-link" href="#today"><span>□</span>My Tasks</a>
+        <a class="nav-link" href="#study-plans"><span>◈</span>Study Plans</a>
+        <a class="nav-link" href="#calendar-panel"><span>📅</span>Calendar</a>
+        <a class="nav-link" href="#assistant"><span>✦</span>AI Assistant</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <a class="nav-link" href="#profile"><span>◎</span>Profile</a>
+        <form method="POST" action="/logout">
+          <button class="nav-link logout-link" type="submit"><span>↪</span>Logout</button>
+        </form>
+      </div>
+    </aside>
 
-  <!-- User bar: shown only when logged in -->
-  <div class="user-bar">
-    <span class="user-pill">👤 {{ user_name }}</span>
-    <form method="POST" action="/logout" style="display:inline;">
-      <button type="submit" class="btn btn-logout" id="logout-btn" aria-label="Log out">
-        Log out
-      </button>
-    </form>
+    <!-- MAIN CONTENT -->
+    <main class="main-content" id="dashboard">
+      <!-- HEADER -->
+      <header class="topbar">
+        <label class="search-box">
+          <span>⌕</span>
+          <input id="search-input" type="search" placeholder="Search tasks..." aria-label="Search tasks">
+        </label>
+        <div class="topbar-actions">
+          <button class="icon-button" type="button" aria-label="Notifications">♢<i></i></button>
+          <button class="profile-chip" type="button">
+            <span class="avatar">{{ user_name[:1]|upper }}</span>
+            <span class="profile-name">{{ user_name }}</span>
+            <span>⌄</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- WELCOME SECTION -->
+      <section class="welcome-row">
+        <div>
+          <p class="eyebrow">YOUR PRODUCTIVITY SPACE</p>
+          <h1>Welcome back, {{ user_name }}! <span aria-hidden="true">👋</span></h1>
+          <p class="welcome-copy">Let's get things done today.</p>
+        </div>
+        <div class="welcome-art" aria-hidden="true">
+          <span class="spark spark-one">✦</span>
+          <span class="spark spark-two">✧</span>
+          <div class="orbit"></div>
+          <div class="art-check">✓</div>
+        </div>
+      </section>
+
+      <!-- STATISTICS ROW -->
+      <section class="summary-grid" aria-label="Task summary">
+        <article class="summary-card">
+          <div class="summary-icon violet">▦</div>
+          <p>Total Tasks</p>
+          <strong id="total-tasks">0</strong>
+          <small>All your tasks</small>
+        </article>
+        <article class="summary-card">
+          <div class="summary-icon green">✓</div>
+          <p>Completed</p>
+          <strong id="completed-tasks">0</strong>
+          <small id="completed-caption">Keep it going</small>
+        </article>
+        <article class="summary-card">
+          <div class="summary-icon orange">◷</div>
+          <p>Pending</p>
+          <strong id="pending-tasks">0</strong>
+          <small>Waiting for you</small>
+        </article>
+        <article class="summary-card">
+          <div class="summary-icon pink">✦</div>
+          <p>Today's Focus</p>
+          <strong id="focus-tasks">0</strong>
+          <small>Tasks to focus on</small>
+        </article>
+      </section>
+
+      <!-- MAIN DASHBOARD GRID -->
+      <section class="dashboard-grid">
+        <!-- ROW 1: YOUR SCHEDULE (LEFT) + TASK OVERVIEW (RIGHT) -->
+        <section class="panel schedule-panel" id="today">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">YOUR SCHEDULE</p>
+              <h2>Today's Tasks</h2>
+            </div>
+            <button class="text-button" type="button" data-scroll="#add-task">+ Add Task</button>
+          </div>
+          <div id="task-list" class="task-list"></div>
+          <div id="empty-state" class="empty-state" hidden>
+            <span>✦</span>
+            <p>No tasks yet. Add your first one above.</p>
+          </div>
+          <div id="filter-empty" class="empty-state" hidden>
+            <span>⌕</span>
+            <p>No matching tasks.</p>
+          </div>
+        </section>
+
+        <section class="panel overview-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">TASK OVERVIEW</p>
+              <h2>Progress</h2>
+            </div>
+            <span class="muted">•••</span>
+          </div>
+          <div class="progress-wrap">
+            <div id="progress-ring" class="progress-ring">
+              <div>
+                <strong id="progress-percent">0%</strong>
+                <span>Completed</span>
+              </div>
+            </div>
+          </div>
+          <div class="overview-legend">
+            <span><i class="dot done"></i>Completed <b id="overview-completed">0</b></span>
+            <span><i class="dot pending"></i>Pending <b id="overview-pending">0</b></span>
+          </div>
+        </section>
+
+        <!-- ROW 2: CALENDAR (LEFT) + AI ASSISTANT (RIGHT) -->
+        <!-- Calendar will be dynamically inserted here by script.js -->
+
+        <section class="panel ai-panel" id="assistant">
+          <div class="ai-top">
+            <div class="ai-badge">✦</div>
+            <span class="online"><i></i> Online</span>
+          </div>
+          <p class="eyebrow">AI ASSISTANT</p>
+          <h2>Hello {{ user_name }}!</h2>
+          <p class="ai-copy">How can I help you today?</p>
+          <div class="quick-prompts">
+            <button type="button" data-prompt="What should I focus on today?">What should I focus on today?<span>›</span></button>
+            <button type="button" data-prompt="Suggest tasks for me">Suggest tasks for me<span>›</span></button>
+            <button type="button" data-prompt="Create a study plan">Create a study plan<span>›</span></button>
+            <button type="button" data-prompt="Motivate me">Motivate me<span>›</span></button>
+          </div>
+          <textarea id="ai-goal" placeholder="Describe your goal..." aria-label="AI goal input"></textarea>
+          <div class="ai-count-control">
+    <label for="ai-suggestion-count">How many suggestions?</label>
+    <select id="ai-suggestion-count">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+    </select>
+</div>
+          <div id="ai-results" class="ai-results" hidden>
+            <div id="ai-suggestions" class="ai-suggestions"></div>
+          </div>
+          <p id="ai-error-msg" class="error-message" role="alert"></p>
+          <div class="ai-controls">
+            <button id="ai-generate-btn" class="primary-button" type="button">Generate tasks ✦</button>
+            <button id="ai-add-btn" class="primary-button secondary" type="button">Add suggestions</button>
+          </div>
+        </section>
+
+        <!-- ROW 3: RECENT TASKS (OPTIONAL - HIDDEN BY DEFAULT) -->
+        <section class="panel" id="recent" style="display:none;">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ACTIVITY</p>
+              <h2>Recent Tasks</h2>
+            </div>
+            <span class="muted">Latest updates</span>
+          </div>
+          <div id="recent-list" class="recent-list"></div>
+        </section>
+      </section>
+
+      <!-- ADD TASK SECTION -->
+      <section class="add-task-bar" id="add-task">
+        <div>
+          <p class="eyebrow">NEW TASK</p>
+          <h2>What needs your attention?</h2>
+        </div>
+        <div class="add-controls">
+          <input id="task-input" maxlength="200" placeholder="Write a task..." aria-label="New task">
+          <button id="add-btn" class="primary-button" type="button">Add task <span>＋</span></button>
+        </div>
+        <p id="error-msg" class="error-message" role="alert"></p>
+      </section>
+
+      <!-- STUDY PLANS SECTION -->
+      <section class="panel plans-panel" id="study-plans" aria-label="Study Plans">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">YOUR ROADMAPS</p>
+            <h2>My Study Plans</h2>
+          </div>
+          <button class="text-button" id="new-plan-button" type="button">+ New Plan</button>
+        </div>
+        <div id="plans-list" class="plans-list"></div>
+        <div id="plans-empty" class="empty-state" hidden>
+          <span>◈</span>
+          <p>No study plans yet. Create your first study plan.</p>
+        </div>
+      </section>
+    </main>
   </div>
-
-  <main class="container">
-    <header class="hero">
-      <div class="hero-icon">✅</div>
-      <h1>My Tasks</h1>
-      <p class="subtitle">Stay organised, stay productive.</p>
-    </header>
-
-    <!-- Add Task Form -->
-    <section class="card input-card" aria-label="Add a new task">
-      <div class="input-row">
-        <input id="task-input" type="text" placeholder="What do you need to do?" autocomplete="off"
-          aria-label="New task" maxlength="200" />
-        <button id="add-btn" class="btn btn-primary" aria-label="Add task">
-          <span class="btn-icon">+</span> Add Task
-        </button>
-      </div>
-      <p id="error-msg" class="error-msg" role="alert" aria-live="polite"></p>
-    </section>
-
-    <!-- Stats Bar -->
-    <div class="stats-bar">
-      <span id="task-count" class="stat">0 tasks</span>
-    </div>
-
-    <!-- Task List -->
-    <section class="card task-card" aria-label="Task list">
-      <ul id="task-list" role="list">
-        <!-- Tasks injected here -->
-      </ul>
-      <div id="empty-state" class="empty-state">
-        <div class="empty-icon">🗒️</div>
-        <p>No tasks yet — add one above!</p>
-      </div>
-    </section>
-  </main>
 
   <script src="/static/script.js"></script>
 </body>
-
 </html>
