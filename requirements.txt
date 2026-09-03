@@ -3,3 +3,4 @@ werkzeug>=3.0.0
 gunicorn
 google-genai
 python-dotenv
+psycopg[binary]

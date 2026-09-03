@@ -1,5 +1,6 @@
-import sqlite3
 import os
+import psycopg
+from psycopg.rows import dict_row
 from datetime import datetime
 from functools import wraps
 from flask import (
@@ -18,78 +19,51 @@ app = Flask(__name__)
 # ── Secret key (set SECRET_KEY env var on Render) ────────────────────────────
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-prod")
 
-# ── Database path ────────────────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "tasks.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-
-# ── Database helpers ─────────────────────────────────────────────────────────
 
 def get_db():
-    """Open a database connection with row_factory for dict-like rows."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Open a PostgreSQL database connection with dict-like rows."""
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
 def init_db():
-    """
-    Create / migrate the database schema on startup.
-    - Creates 'users' table if it does not exist.
-    - Creates 'tasks' table if it does not exist (with user_id).
-    - Adds 'user_id' column to existing 'tasks' table if it is missing
-      (non-destructive migration — existing rows keep user_id = NULL).
-    """
+    """Create the database tables if they do not already exist."""
     with get_db() as conn:
-        # Users table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                name       TEXT    NOT NULL,
-                email      TEXT    NOT NULL UNIQUE,
-                password   TEXT    NOT NULL,
-                created_at TEXT    NOT NULL
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                created_at TEXT NOT NULL
             )
         """)
 
-        # Tasks table (created fresh with user_id for new databases)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                title      TEXT    NOT NULL,
-                completed  INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT    NOT NULL,
-                user_id    INTEGER REFERENCES users(id),
-                priority   TEXT,
-                due_date   TEXT
+                id SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                completed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                user_id INTEGER REFERENCES users(id),
+                priority TEXT,
+                due_date TEXT
             )
         """)
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS study_plans (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id          INTEGER NOT NULL REFERENCES users(id),
-                goal             TEXT NOT NULL,
-                subjects         TEXT NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                goal TEXT NOT NULL,
+                subjects TEXT NOT NULL,
                 daily_study_time TEXT NOT NULL,
-                exam_date        TEXT,
-                difficulty       TEXT NOT NULL,
-                created_at       TEXT NOT NULL
+                exam_date TEXT,
+                difficulty TEXT NOT NULL,
+                created_at TEXT NOT NULL
             )
         """)
-
-        # Non-destructive migration: add user_id column to existing tasks table
-        # if it was created before this version (safe to run every startup).
-        existing_cols = [
-            row[1]
-            for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
-        ]
-        if "user_id" not in existing_cols:
-            conn.execute("ALTER TABLE tasks ADD COLUMN user_id INTEGER REFERENCES users(id)")
-        if "priority" not in existing_cols:
-            conn.execute("ALTER TABLE tasks ADD COLUMN priority TEXT")
-        if "due_date" not in existing_cols:
-            conn.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
 
         conn.commit()
 
@@ -215,17 +189,16 @@ def signup():
         try:
             with get_db() as conn:
                 cursor = conn.execute(
-                    "INSERT INTO users (name, email, password, created_at) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO users (name, email, password, created_at) VALUES (%s, %s, %s, %s) RETURNING id",
                     (name, email, hashed_pw, created_at),
                 )
                 conn.commit()
-                user_id = cursor.lastrowid
-
+                user_id = cursor.fetchone()["id"]
             session["user_id"]   = user_id
             session["user_name"] = name
             return redirect(url_for("index"))
 
-        except sqlite3.IntegrityError:
+        except psycopg.errors.UniqueViolation:
             # UNIQUE constraint on email failed
             flash("An account with that email already exists. Please log in.", "error")
             return render_template("signup.html")
@@ -254,7 +227,7 @@ def login():
         try:
             conn = get_db()
             user = conn.execute(
-                "SELECT * FROM users WHERE email = ?", (email,)
+                "SELECT * FROM users WHERE email = %s", (email,)
             ).fetchone()
             conn.close()
         except Exception as e:
@@ -295,7 +268,7 @@ def get_profile():
     user_id = get_current_user_id()
     with get_db() as conn:
         user = conn.execute(
-            "SELECT id, name, email, created_at FROM users WHERE id = ?",
+            "SELECT id, name, email, created_at FROM users WHERE id = %s",
             (user_id,),
         ).fetchone()
     if user is None:
@@ -309,7 +282,7 @@ def get_study_plan():
     user_id = get_current_user_id()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM tasks WHERE user_id = ? AND completed = 0 "
+            "SELECT * FROM tasks WHERE user_id = %s AND completed = 0 "
             "ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date, created_at",
             (user_id,),
         ).fetchall()
@@ -326,7 +299,7 @@ def get_study_plan():
 def get_study_plans():
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM study_plans WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM study_plans WHERE user_id = %s ORDER BY created_at DESC",
             (get_current_user_id(),),
         ).fetchall()
     return jsonify([plan_to_dict(row) for row in rows])
@@ -342,14 +315,17 @@ def create_study_plan():
     created_at = datetime.now().isoformat(timespec="seconds")
     with get_db() as conn:
         cursor = conn.execute(
-            """INSERT INTO study_plans
-               (user_id, goal, subjects, daily_study_time, exam_date, difficulty, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (get_current_user_id(), *plan, created_at),
+             """INSERT INTO study_plans
+                (user_id, goal, subjects, daily_study_time, exam_date, difficulty, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id""",
+             (get_current_user_id(), *plan, created_at),
         )
+        plan_id = cursor.fetchone()["id"]
+
         row = conn.execute(
-            "SELECT * FROM study_plans WHERE id = ? AND user_id = ?",
-            (cursor.lastrowid, get_current_user_id()),
+            "SELECT * FROM study_plans WHERE id = %s AND user_id = %s",
+            (plan_id, get_current_user_id()),
         ).fetchone()
     return jsonify(plan_to_dict(row)), 201
 
@@ -359,7 +335,7 @@ def create_study_plan():
 def delete_study_plan(plan_id):
     with get_db() as conn:
         result = conn.execute(
-            "DELETE FROM study_plans WHERE id = ? AND user_id = ?",
+            "DELETE FROM study_plans WHERE id = %s AND user_id = %s",
             (plan_id, get_current_user_id()),
         )
     if result.rowcount == 0:
@@ -377,7 +353,7 @@ def get_tasks():
     try:
         conn = get_db()
         rows = conn.execute(
-            "SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM tasks WHERE user_id = %s ORDER BY created_at DESC",
             (user_id,)
         ).fetchall()
         conn.close()
@@ -405,13 +381,13 @@ def add_task():
         conn   = get_db()
         cursor = conn.execute(
             "INSERT INTO tasks (title, completed, created_at, user_id, priority, due_date) "
-            "VALUES (?, 0, ?, ?, ?, ?)",
+            "VALUES (%s, 0, %s, %s, %s, %s) RETURNING id",
             (title, created_at, user_id, priority, due_date),
         )
+        task_id = cursor.fetchone()["id"]
         conn.commit()
-        task_id = cursor.lastrowid
         row = conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            "SELECT * FROM tasks WHERE id = %s", (task_id,)
         ).fetchone()
         conn.close()
         return jsonify(row_to_dict(row)), 201
@@ -433,14 +409,14 @@ def edit_task(task_id):
     try:
         with get_db() as conn:
             result = conn.execute(
-                "UPDATE tasks SET title = ?, priority = ?, due_date = ? "
-                "WHERE id = ? AND user_id = ?",
+                "UPDATE tasks SET title = %s, priority = %s, due_date = %s "
+                "WHERE id = %s AND user_id = %s",
                 (title, priority, due_date, task_id, get_current_user_id()),
             )
             if result.rowcount == 0:
                 return jsonify({"error": "Task not found"}), 404
             row = conn.execute(
-                "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
+                "SELECT * FROM tasks WHERE id = %s AND user_id = %s",
                 (task_id, get_current_user_id()),
             ).fetchone()
         return jsonify(row_to_dict(row)), 200
@@ -520,12 +496,12 @@ def confirm_ai_tasks():
                 cursor = conn.execute(
                     """INSERT INTO tasks
                        (title, completed, created_at, user_id, priority, due_date)
-                       VALUES (?, 0, ?, ?, ?, ?)""",
+                       VALUES (%s, 0, %s, %s, %s, %s)""",
                     (suggestion["title"], created_at, user_id,
                      suggestion["priority"], suggestion["due_date"]),
                 )
                 row = conn.execute(
-                    "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
+                    "SELECT * FROM tasks WHERE id = %s AND user_id = %s",
                     (cursor.lastrowid, user_id),
                 ).fetchone()
                 created.append(row_to_dict(row))
@@ -543,7 +519,7 @@ def toggle_complete(task_id):
     try:
         conn = get_db()
         row  = conn.execute(
-            "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
+            "SELECT * FROM tasks WHERE id = %s AND user_id = %s",
             (task_id, user_id)
         ).fetchone()
         if row is None:
@@ -552,12 +528,12 @@ def toggle_complete(task_id):
 
         new_state = 0 if row["completed"] else 1
         conn.execute(
-            "UPDATE tasks SET completed = ? WHERE id = ? AND user_id = ?",
+            "UPDATE tasks SET completed = %s WHERE id = %s AND user_id = %s",
             (new_state, task_id, user_id),
         )
         conn.commit()
         updated = conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            "SELECT * FROM tasks WHERE id = %s", (task_id,)
         ).fetchone()
         conn.close()
         return jsonify(row_to_dict(updated)), 200
@@ -573,7 +549,7 @@ def delete_task(task_id):
     try:
         conn   = get_db()
         result = conn.execute(
-            "DELETE FROM tasks WHERE id = ? AND user_id = ?",
+            "DELETE FROM tasks WHERE id = %s AND user_id = %s",
             (task_id, user_id)
         )
         conn.commit()
