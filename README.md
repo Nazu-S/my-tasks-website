@@ -9,7 +9,7 @@ A clean, minimal to-do application built with **Python Flask** (backend) and van
 ```
 Web Application/
 ├── app.py              # Flask backend & REST API
-├── ai_provider.py      # Server-side OpenAI integration and response validation
+├── ai_provider.py      # Server-side Google Gemini integration and response validation
 ├── requirements.txt    # Python dependencies
 ├── templates/
 │   └── index.html      # Main page template
@@ -120,6 +120,5 @@ python -m pytest -q test_auth.py
 ---
 
 ## Notes
-
-- Tasks are stored in the local `tasks.db` SQLite database.
+-Tasks and study plans are stored in a Supabase PostgreSQL database.
 - Press **Enter** in the input field to add a task quickly.
